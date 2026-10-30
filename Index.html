@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>مركز عمليات SSA</title>
+<style>
+  :root {
+    --bg: #05060d;
+    --green: #00e676;
+    --cyan: #00e5ff;
+    --red: #ff1744;
+    --panel: rgba(10, 20, 40, 0.85);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: var(--bg);
+    font-family: 'Tajawal', 'Segoe UI', Tahoma, sans-serif;
+    color: #fff; user-select: none;
+  }
+  body::before {
+    content: ''; position: fixed; inset: 0;
+    background-image:
+      radial-gradient(1px 1px at 20% 30%, #fff, transparent),
+      radial-gradient(1px 1px at 60% 70%, #fff, transparent),
+      radial-gradient(1px 1px at 80% 20%, #fff, transparent),
+      radial-gradient(1.5px 1.5px at 40% 80%, #fff, transparent),
+      radial-gradient(1px 1px at 90% 50%, #fff, transparent),
+      radial-gradient(1px 1px at 10% 60%, #fff, transparent),
+      radial-gradient(1.5px 1.5px at 50% 10%, #fff, transparent),
+      radial-gradient(1px 1px at 30% 50%, #fff, transparent);
+    opacity: 0.6;
+    animation: twinkle 4s ease-in-out infinite alternate;
+    z-index: 0;
+  }
+  @keyframes twinkle { from { opacity: 0.3; } to { opacity: 0.8; } }
+
+  .screen {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    z-index: 10; padding: 2rem;
+  }
+
+  #start-screen { background: radial-gradient(ellipse at center, rgba(0, 60, 120, 0.3), transparent 70%); }
+  .logo-badge {
+    width: 120px; height: 120px; border-radius: 50%;
+    border: 3px solid var(--green);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 3.5rem; margin-bottom: 1.5rem;
+    box-shadow: 0 0 40px rgba(0, 230, 118, 0.4), inset 0 0 30px rgba(0, 230, 118, 0.2);
+  }
+  h1 {
+    font-size: clamp(1.8rem, 4vw, 3rem); font-weight: 800; text-align: center;
+    background: linear-gradient(90deg, var(--green), var(--cyan));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text; margin-bottom: 0.5rem;
+  }
+  .subtitle { font-size: clamp(1rem, 1.8vw, 1.4rem); color: #a0b8d0; margin-bottom: 2rem; text-align: center; }
+  
+  .brief {
+    max-width: 620px; background: var(--panel);
+    border: 1px solid rgba(0, 230, 118, 0.3);
+    border-radius: 16px; padding: 1.5rem 2rem; margin-bottom: 2rem;
+    text-align: right; line-height: 1.9; font-size: 1.05rem;
+  }
+  .brief strong { color: var(--green); }
+  
+  .btn {
+    background: linear-gradient(135deg, var(--green), #00b0ff);
+    color: #001a10; border: none; padding: 1rem 3rem;
+    font-size: 1.2rem; font-weight: 700; border-radius: 50px;
+    cursor: pointer; font-family: inherit;
+    box-shadow: 0 0 30px rgba(0, 230, 118, 0.4);
+    position: relative; z-index: 9999; display: inline-block;
+    text-decoration: none;
+  }
+  .btn:hover { transform: translateY(-3px) scale(1.05); }
+
+  #game-screen { padding: 0; display: none; }
+  #game-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  
+  #hud { position: absolute; inset: 0; pointer-events: none; padding: 20px; }
+  .hud-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
+  .hud-panel {
+    background: var(--panel); border: 1px solid rgba(0, 230, 118, 0.3);
+    border-radius: 12px; padding: 0.8rem 1.2rem; font-size: 0.95rem;
+  }
+  .hud-label { color: #7a9bb8; font-size: 0.8rem; }
+  .hud-value { color: var(--green); font-weight: 700; font-size: 1.15rem; }
+  .timer-box { text-align: center; }
+  .timer-value { font-size: 2rem; font-weight: 800; color: var(--cyan); }
+  .coverage-bar { width: 180px; height: 10px; background: rgba(255,255,255,0.1); border-radius: 5px; overflow: hidden; margin-top: 6px; }
+  .coverage-fill { height: 100%; background: linear-gradient(90deg, var(--green), var(--cyan)); width: 0%; transition: width 0.3s; }
+  .hud-bottom {
+    position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); text-align: center;
+    font-size: 0.95rem; color: #a0b8d0; background: var(--panel); padding: 0.6rem 1.5rem;
+    border-radius: 50px; border: 1px solid rgba(0, 229, 255, 0.3);
+  }
+  #toast {
+    position: absolute; top: 30%; left: 50%; transform: translateX(-50%);
+    background: var(--green); color: #001a10; padding: 1rem 2rem; border-radius: 12px;
+    font-weight: 700; font-size: 1.1rem; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 20;
+  }
+  #toast.show { opacity: 1; }
+  #toast.error { background: var(--red); color: #fff; }
+
+  #result-screen { background: radial-gradient(ellipse at center, rgba(0, 230, 118, 0.1), transparent 70%); display: none; }
+  .result-icon { font-size: 6rem; margin-bottom: 1rem; }
+  .result-title { font-size: clamp(2rem, 4vw, 3rem); font-weight: 800; margin-bottom: 1rem; }
+  .result-title.win { color: var(--green); }
+  .result-title.lose { color: var(--red); }
+  .stats { display: flex; gap: 2rem; margin: 1.5rem 0 2rem; flex-wrap: wrap; justify-content: center; }
+  .stat-box { background: var(--panel); border: 1px solid rgba(0, 230, 118, 0.3); border-radius: 12px; padding: 1rem 2rem; text-align: center; min-width: 140px; }
+  .stat-label { color: #7a9bb8; font-size: 0.85rem; margin-bottom: 0.3rem; }
+  .stat-value { color: var(--cyan); font-size: 1.8rem; font-weight: 800; }
+</style>
+</head>
+<body>
+
+<!-- START SCREEN -->
+<div id="start-screen" class="screen">
+  <div class="logo-badge">🛰️</div>
+  <h1>مركز عمليات وكالة الفضاء السعودية</h1>
+  <p class="subtitle">مهمة تغطية المملكة — SSA Digital Operations</p>
+  
+  <div class="brief">
+    <strong>مرحبًا بك في مركز التحكم.</strong><br>
+    أنتِ الآن مسؤولة عن تشغيل قمر صناعي سعودي فوق المملكة.<br>
+    مهمتك خلال <strong>60 ثانية</strong>:<br>
+    ١. حرّكي القمر بالماوس فوق الخريطة.<br>
+    ٢. اضغطي بزر الماوس على كل مدينة (الرياض، جدة، نيوم) لالتقاط الصورة.<br>
+    ٣. تجنّبي <strong>الحطام الفضائي</strong> المتحرك.<br><br>
+    <strong>الهدف:</strong> تغطية المدن الثلاث قبل انتهاء الوقت.
+  </div>
+  
+  <!-- الزر مربوط مباشرة بالدالة عشان يشتغل 100% -->
+  <button type="button" class="btn" onclick="startGame()">🚀 ابدئي المهمة</button>
+</div>
+
+<!-- GAME SCREEN -->
+<div id="game-screen" class="screen">
+  <canvas id="game-canvas"></canvas>
+  <div id="hud">
+    <div class="hud-top">
+      <div class="hud-panel">
+        <div class="hud-label">الطاقة ⚡</div>
+        <div class="hud-value" id="battery-val">100%</div>
+      </div>
+      <div class="hud-panel timer-box">
+        <div class="hud-label">الوقت المتبقي</div>
+        <div class="timer-value" id="timer-val">60</div>
+      </div>
+      <div class="hud-panel">
+        <div class="hud-label">التغطية 📡</div>
+        <div class="hud-value" id="coverage-val">0 / 3</div>
+        <div class="coverage-bar"><div class="coverage-fill" id="coverage-fill"></div></div>
+      </div>
+    </div>
+    <div class="hud-bottom">
+      🖱️ حرّكي القمر بالماوس · اضغطي على المدينة لالتقاط الصورة · تجنبي الحطام الأحمر
+    </div>
+  </div>
+  <div id="toast"></div>
+</div>
+
+<!-- RESULT SCREEN -->
+<div id="result-screen" class="screen">
+  <div class="result-icon" id="result-icon">✅</div>
+  <h1 class="result-title win" id="result-title">نجحت المهمة!</h1>
+  <p class="subtitle" id="result-msg">تمت تغطية المملكة بنجاح</p>
+  <div class="stats">
+    <div class="stat-box">
+      <div class="stat-label">المدن المغطاة</div>
+      <div class="stat-value" id="stat-covered">3/3</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">الطاقة المتبقية</div>
+      <div class="stat-value" id="stat-battery">85%</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">النقاط</div>
+      <div class="stat-value" id="stat-score">0</div>
+    </div>
+  </div>
+  <button type="button" class="btn" onclick="startGame()">🔁 إعادة المحاولة</button>
+</div>
+
+<!-- السكربت في النهاية بدون أي تعقيدات -->
+<script>
+var canvas, ctx;
+var gameRunning = false;
+var timeLeft = 60;
+var battery = 100;
+var coveredCities = 0;
+var score = 0;
+var satellite = { x: 0.5, y: 0.5, tx: 0.5, ty: 0.5, angle: 0 };
+var debrisList = [];
+var lastTime = 0;
+var invulnUntil = 0;
+var mapBounds = null;
+
+var cities = [
+  { name: "الرياض", x: 0.52, y: 0.48, done: false },
+  { name: "جدة", x: 0.32, y: 0.60, done: false },
+  { name: "نيوم", x: 0.22, y: 0.25, done: false }
+];
+
+function startGame() {
+  alert("تم الضغط بنجاح! جاري فتح اللعبة...");
+  
+  document.getElementById("start-screen").style.display = "none";
+  document.getElementById("result-screen").style.display = "none";
+  document.getElementById("game-screen").style.display = "flex";
+
+  if (!canvas) {
+    canvas = document.getElementById("game-canvas");
+    ctx = canvas.getContext("2d");
+    window.addEventListener("resize", function() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    });
+    canvas.addEventListener("mousemove", function(e) { handleMove(e.clientX, e.clientY); });
+    canvas.addEventListener("mousedown", function(e) { if (e.button === 0) tryCapture(e.clientX, e.clientY); });
+  }
+
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+
+  gameRunning = true;
+  timeLeft = 60;
+  battery = 100;
+  coveredCities = 0;
+  score = 0;
+  satellite = { x: 0.5, y: 0.5, tx: 0.5, ty: 0.5, angle: 0 };
+  invulnUntil = 0;
+  
+  for (var i = 0; i < cities.length; i++) {
+    cities[i].done = false;
+  }
+
+  debrisList = [];
+  for (var j = 0; j < 4; j++) {
+    debrisList.push(createDebris());
+  }
+
+  updateHUD();
+  showToast("🚀 بدأت المهمة — بالتوفيق!", false);
+  
+  lastTime = performance.now();
+  requestAnimationFrame(loop);
+}
+
+function createDebris() {
+  var edge = Math.floor(Math.random() * 4);
+  var speed = Math.random() * 0.06 + 0.06;
+  var x, y, vx, vy;
+  if (edge === 0) { x = -0.05; y = Math.random(); vx = speed; vy = 0; }
+  else if (edge === 1) { x = 1.05; y = Math.random(); vx = -speed; vy = 0; }
+  else if (edge === 2) { x = Math.random(); y = -0.05; vx = 0; vy = speed; }
+  else { x = Math.random(); y = 1.05; vx = 0; vy = -speed; }
+  return { x: x, y: y, vx: vx, vy: vy, r: Math.random() * 0.01 + 0.014, rot: 0, rotSpeed: (Math.random() - 0.5) * 4 };
+}
+
+function showToast(text, isError) {
+  var t = document.getElementById("toast");
+  t.textContent = text;
+  t.className = isError ? "show error" : "show";
+  setTimeout(function() { t.className = ""; }, 1600);
+}
+
+function loop(now) {
+  if (!gameRunning) return;
+  var dt = Math.min((now - lastTime) / 1000, 0.1);
+  lastTime = now;
+
+  timeLeft -= dt;
+  if (timeLeft <= 0) { timeLeft = 0; endGame(false); return; }
+  battery -= 0.8 * dt;
+  if (battery <= 0) { battery = 0; endGame(false); return; }
+
+  satellite.x += (satellite.tx - satellite.x) * 0.15;
+  satellite.y += (satellite.ty - satellite.y) * 0.15;
+  
+  var dx = satellite.tx - satellite.x;
+  var dy = satellite.ty - satellite.y;
+  if (Math.abs(dx) + Math.abs(dy) > 0.005) satellite.angle = Math.atan2(dy, dx);
+
+  for (var i = 0; i < debrisList.length; i++) {
+    var d = debrisList[i];
+    d.x += d.vx * dt; d.y += d.vy * dt; d.rot += d.rotSpeed * dt;
+    if (d.x < -0.2 || d.x > 1.2 || d.y < -0.2 || d.y > 1.2) debrisList[i] = createDebris();
+  }
+
+  if (now > invulnUntil) {
+    for (var k = 0; k < debrisList.length; k++) {
+      var deb = debrisList[k];
+      var dist = Math.hypot(satellite.x - deb.x, satellite.y - deb.y);
+      if (dist < deb.r + 0.04) {
+        battery -= 12;
+        invulnUntil = now + 1500;
+        showToast("⚠️ اصطدام! -12%", true);
+        break;
+      }
+    }
+  }
+
+  updateHUD();
+  draw(now);
+  requestAnimationFrame(loop);
+}
+
+function updateHUD() {
+  document.getElementById("battery-val").textContent = Math.round(battery) + "%";
+  document.getElementById("battery-val").style.color = battery < 30 ? "#ff1744" : "#00e676";
+  document.getElementById("timer-val").textContent = Math.ceil(timeLeft);
+  document.getElementById("timer-val").style.color = timeLeft < 10 ? "#ff1744" : "#00e5ff";
+  document.getElementById("coverage-val").textContent = coveredCities + " / 3";
+  document.getElementById("coverage-fill").style.width = (coveredCities / 3 * 100) + "%";
+}
+
+function endGame(won) {
+  gameRunning = false;
+  var finalScore = won ? score + Math.round(battery * 3) : score;
+  document.getElementById("stat-covered").textContent = coveredCities + "/3";
+  document.getElementById("stat-battery").textContent = Math.round(battery) + "%";
+  document.getElementById("stat-score").textContent = finalScore;
+
+  var icon = document.getElementById("result-icon");
+  var title = document.getElementById("result-title");
+  var msg = document.getElementById("result-msg");
+
+  if (won) {
+    icon.textContent = "🏆"; title.textContent = "نجحت المهمة!"; title.className = "result-title win";
+    msg.textContent = "تمت تغطية المملكة بنجاح — عمل رائع!";
+  } else {
+    icon.textContent = "💥"; title.textContent = "انتهت المهمة"; title.className = "result-title lose";
+    msg.textContent = battery <= 0 ? "نفدت الطاقة!" : "انتهى الوقت!";
+  }
+
+  document.getElementById("game-screen").style.display = "none";
+  document.getElementById("result-screen").style.display = "flex";
+}
+
+function draw(now) {
+  var W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  
+  ctx.fillStyle = "#05060d"; 
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.strokeStyle = "rgba(0, 230, 118, 0.05)";
+  ctx.lineWidth = 1;
+  for (var x = 0; x < W; x += 60) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (var y = 0; y < H; y += 60) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+  var mw = W * 0.7, mh = H * 0.65;
+  var mx = W/2 - mw/2, my = H/2 - mh/2;
+  mapBounds = { x: mx, y: my, w: mw, h: mh };
+
+  ctx.fillStyle = "rgba(0, 60, 40, 0.15)";
+  ctx.strokeStyle = "rgba(0, 230, 118, 0.35)";
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.rect(mx, my, mw, mh); ctx.fill(); ctx.stroke();
+
+  for (var c = 0; c < cities.length; c++) {
+    var city = cities[c];
+    var cx = mx + mw * city.x; var cy = my + mh * city.y; var r = city.done ? 30 : 26;
+    ctx.strokeStyle = city.done ? "#00e676" : "#00e5ff"; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.stroke();
+    ctx.fillStyle = city.done ? "#00e676" : "#00e5ff";
+    ctx.beginPath(); ctx.arc(cx, cy, city.done ? 6 : 4, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = city.done ? "#00e676" : "#fff"; ctx.font = "bold 15px Tajawal, sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(city.done ? "✓ " + city.name : city.name, cx, cy + r + 18);
+  }
+
+  for (var j = 0; j < debrisList.length; j++) {
+    var d = debrisList[j];
+    var dx = d.x * W, dy = d.y * H; var dr = d.r * Math.min(W, H);
+    ctx.save(); ctx.translate(dx, dy); ctx.rotate(d.rot);
+    ctx.fillStyle = "#ff1744"; 
+    ctx.beginPath(); ctx.arc(0, 0, dr, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+
+  var satX = satellite.x * W; var satY = satellite.y * H;
+  ctx.save(); ctx.translate(satX, satY); ctx.rotate(satellite.angle);
+  if (now < invulnUntil) ctx.globalAlpha = 0.5;
+  
+  ctx.fillStyle = "#1565c0"; 
+  ctx.fillRect(-38, -10, 22, 20); 
+  ctx.fillRect(16, -10, 22, 20);
+  
+  ctx.fillStyle = "#e0e0e0"; ctx.strokeStyle = "#00e5ff"; ctx.lineWidth = 2;
+  ctx.fillRect(-14, -14, 28, 28); ctx.strokeRect(-14, -14, 28, 28);
+  ctx.restore();
+}
+
+function handleMove(x, y) {
+  if (!gameRunning) return;
+  satellite.tx = x / canvas.width; satellite.ty = y / canvas.height;
+}
+
+function tryCapture(x, y) {
+  if (!gameRunning) return;
+  for (var i = 0; i < cities.length; i++) {
+    var city = cities[i];
+    if (city.done) continue;
+    var cx = mapBounds.x + mapBounds.w * city.x; var cy = mapBounds.y + mapBounds.h * city.y;
+    if (Math.hypot(x - cx, y - cy) < 75) {
+      city.done = true; coveredCities++;
+      score += 100 + Math.round(timeLeft * 2);
+      showToast("✅ تمت تغطية " + city.name + "!", false);
+      if (coveredCities === 3) setTimeout(function() { endGame(true); }, 600);
+      return;
+    }
+  }
+}
+</script>
+</body>
+</html>
